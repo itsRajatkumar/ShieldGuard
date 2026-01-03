@@ -9,6 +9,16 @@ interface OsvQuery {
   };
 }
 
+interface OsvBatchVuln {
+  id: string;
+}
+
+interface OsvBatchResponse {
+  results: {
+    vulns?: OsvBatchVuln[];
+  }[];
+}
+
 interface OsvVuln {
     id: string;
     summary: string;
@@ -19,6 +29,7 @@ interface OsvVuln {
         package: {
           name: string;
           ecosystem: string;
+          purl: string;
         };
         ranges: {
           type: string;
@@ -34,13 +45,22 @@ interface OsvVuln {
     }
 }
 
-interface OsvResponse {
-  results: {
-    vulns?: OsvVuln[];
-  }[];
+export const maxDuration = 60;
+
+async function fetchVulnerabilityDetails(vulnId: string): Promise<OsvVuln | null> {
+    try {
+        const res = await fetch(`https://api.osv.dev/v1/vulns/${vulnId}`);
+        if (!res.ok) {
+            console.error(`Failed to fetch details for ${vulnId}: ${res.status}`);
+            return null;
+        }
+        return res.json();
+    } catch (error) {
+        console.error(`Error fetching details for ${vulnId}:`, error);
+        return null;
+    }
 }
 
-export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,65 +85,76 @@ export async function POST(req: NextRequest) {
       package: { name, ecosystem: 'npm' },
     }));
 
-    const res = await fetch('https://api.osv.dev/v1/querybatch', {
+    const batchRes = await fetch('https://api.osv.dev/v1/querybatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ queries }),
     });
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error('OSV API Error:', errorText);
-      return NextResponse.json({ error: `OSV API failed with status ${res.status}: ${errorText}` }, { status: res.status });
+    if (!batchRes.ok) {
+      const errorText = await batchRes.text();
+      console.error('OSV Batch API Error:', errorText);
+      return NextResponse.json({ error: `OSV Batch API failed with status ${batchRes.status}: ${errorText}` }, { status: batchRes.status });
     }
 
-    const data: OsvResponse = await res.json();
+    const batchData: OsvBatchResponse = await batchRes.json();
     
-    const vulnerabilitiesMap = new Map<string, Vulnerability>();
-
-    data.results.forEach((result, index) => {
-      if (!result.vulns) return;
-      
-      const query = queries[index];
-      const { name: pkgName, version: pkgVersion } = query.package;
-
-      let existingEntry = vulnerabilitiesMap.get(pkgName);
-
-      if (!existingEntry) {
-        existingEntry = {
-          pkg: {
-            name: pkgName,
-            version: pkgVersion,
-          },
-          vulns: [],
-          highestSeverity: 'UNKNOWN',
-        };
-      }
-      
-      const severities: ('CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN')[] = [existingEntry.highestSeverity];
-
-      result.vulns.forEach(vuln => {
-        const affectedPackage = vuln.affected && vuln.affected.length > 0 ? vuln.affected[0] : undefined;
-        const fixedEvent = affectedPackage?.ranges.find(r => r.type === 'SEMVER')?.events.find(e => e.fixed);
-        const severity = vuln.database_specific?.severity || 'UNKNOWN';
-        severities.push(severity);
-
-        existingEntry!.vulns.push({
-            id: vuln.id,
-            summary: vuln.summary,
-            details: vuln.details,
-            severity: severity,
-            affectedVersions: affectedPackage?.versions || [],
-            fixedVersion: fixedEvent?.fixed,
+    const vulnIds = new Set<string>();
+    batchData.results.forEach(result => {
+        result.vulns?.forEach(vuln => {
+            vulnIds.add(vuln.id);
         });
-      });
-
-      const severityOrder: ('CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN')[] = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'UNKNOWN'];
-      existingEntry.highestSeverity = severities.sort((a, b) => severityOrder.indexOf(a) - severityOrder.indexOf(b))[0];
-
-      vulnerabilitiesMap.set(pkgName, existingEntry);
     });
 
+    const detailedVulnsPromises = Array.from(vulnIds).map(id => fetchVulnerabilityDetails(id));
+    const detailedVulnsResults = await Promise.all(detailedVulnsPromises);
+    const detailedVulns = detailedVulnsResults.filter((v): v is OsvVuln => v !== null);
+
+    const vulnerabilitiesMap = new Map<string, Vulnerability>();
+
+    detailedVulns.forEach(vuln => {
+        vuln.affected.forEach(affected => {
+            // We only care about npm packages
+            if (affected.package.ecosystem !== 'npm') return;
+
+            const pkgName = affected.package.name;
+            const query = queries.find(q => q.package.name === pkgName);
+            if (!query) return;
+
+            let existingEntry = vulnerabilitiesMap.get(pkgName);
+            if (!existingEntry) {
+                existingEntry = {
+                    pkg: {
+                        name: pkgName,
+                        version: query.version,
+                    },
+                    vulns: [],
+                    highestSeverity: 'UNKNOWN',
+                };
+            }
+
+            const fixedEvent = affected.ranges.find(r => r.type === 'SEMVER')?.events.find(e => 'fixed' in e);
+            const severity = vuln.database_specific?.severity || 'UNKNOWN';
+
+            existingEntry.vulns.push({
+                id: vuln.id,
+                summary: vuln.summary,
+                details: vuln.details,
+                severity: severity,
+                affectedVersions: affected.versions || [],
+                fixedVersion: fixedEvent?.fixed,
+            });
+
+            const severityOrder: ('CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN')[] = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'UNKNOWN'];
+            const currentSeverities = existingEntry.vulns.map(v => v.severity);
+            currentSeverities.push(existingEntry.highestSeverity);
+
+            existingEntry.highestSeverity = currentSeverities.sort((a, b) => severityOrder.indexOf(a) - severityOrder.indexOf(b))[0];
+            
+            vulnerabilitiesMap.set(pkgName, existingEntry);
+        })
+    });
+    
     const vulnerabilities: Vulnerability[] = Array.from(vulnerabilitiesMap.values());
 
     return NextResponse.json(vulnerabilities);
