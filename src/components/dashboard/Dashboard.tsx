@@ -84,7 +84,7 @@ export function Dashboard() {
     };
 
     scan();
-  }, [searchParams, toast]);
+  }, [searchParams, toast, router]);
 
   const handleVulnerabilitySelect = (vuln: Vulnerability) => {
     setSelectedVulnerability(vuln);
