@@ -1,4 +1,4 @@
-import { Code, Package, Pyramids, Box, FileLock } from 'lucide-react';
+import { Code, Package, Pyramid, Box, FileLock } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type EcosystemInfo = {
@@ -23,7 +23,7 @@ export const ecosystemInfo: Record<string, EcosystemInfo> = {
     name: 'PyPI',
     language: 'Python',
     languageIcon: Code,
-    ecosystemIcon: Pyramids,
+    ecosystemIcon: Pyramid,
     file: 'requirements.txt',
   },
   Go: {
