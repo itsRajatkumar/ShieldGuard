@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ShieldX, Loader2, Sparkles, ServerCrash } from 'lucide-react';
+import { ShieldX, Loader2, Sparkles, ServerCrash, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { Vulnerability, Ecosystem } from '@/lib/types';
 import { HealthScoreGauge } from './HealthScoreGauge';
@@ -13,12 +13,15 @@ import { Button } from '@/components/ui/button';
 import { MarkdownReport } from './MarkdownReport';
 import { ecosystemInfo, type EcosystemInfo } from '@/lib/ecosystems';
 import { Badge } from '../ui/badge';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 export function Dashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
   const scanHasRun = useRef(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[] | null>(null);
   const [selectedVulnerability, setSelectedVulnerability] = useState<Vulnerability | null>(null);
@@ -30,6 +33,7 @@ export function Dashboard() {
 
   const [healthScoreExplanation, setHealthScoreExplanation] = useState<string | null>(null);
   const [isExplanationLoading, setIsExplanationLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     const data = searchParams.get('data');
@@ -107,6 +111,44 @@ export function Dashboard() {
     setIsSheetOpen(true);
   };
   
+  const handleDownloadPdf = async () => {
+    const reportElement = reportRef.current;
+    if (!reportElement) return;
+
+    setIsDownloading(true);
+    try {
+      const canvas = await html2canvas(reportElement, {
+        scale: 2,
+        backgroundColor: '#0A0A0A',
+        onclone: (document) => {
+            // Target the prose class to set text color explicitly for html2canvas
+            Array.from(document.querySelectorAll('.prose')).forEach(el => {
+                (el as HTMLElement).style.color = '#E5E7EB';
+            });
+        }
+      });
+      const imgData = canvas.toDataURL('image/png');
+      
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.save('shieldguard-report.pdf');
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      toast({
+        title: 'Download Failed',
+        description: 'Could not generate the PDF report.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   if (status === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] gap-4">
@@ -163,53 +205,62 @@ export function Dashboard() {
 
   return (
     <div className="container mx-auto py-10">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <div className="lg:col-span-1 space-y-8">
-            <HealthScoreGauge score={healthScore} />
-            {currentEcosystem && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Scan Details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Language</span>
-                    <div className="flex items-center gap-2 font-medium">
-                      <currentEcosystem.languageIcon className="w-5 h-5"/>
-                      <span>{currentEcosystem.language}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Ecosystem</span>
-                     <div className="flex items-center gap-2 font-medium">
-                      <currentEcosystem.ecosystemIcon className="w-5 h-5"/>
-                      <Badge variant="secondary">{currentEcosystem.name}</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Sparkles className="text-primary w-5 h-5"/>
-                        AI Analysis
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {isExplanationLoading ? (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                            <Loader2 className="w-4 h-4 animate-spin"/>
-                            <span>AI is reasoning...</span>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold font-headline">Security Report</h1>
+        <Button onClick={handleDownloadPdf} disabled={isDownloading}>
+          {isDownloading ? <Loader2 className="animate-spin" /> : <Download />}
+          {isDownloading ? 'Downloading...' : 'Download Report'}
+        </Button>
+      </div>
+      <div ref={reportRef} className="p-8 rounded-lg bg-card border">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="lg:col-span-1 space-y-8">
+                <HealthScoreGauge score={healthScore} />
+                {currentEcosystem && (
+                <Card>
+                    <CardHeader>
+                    <CardTitle>Scan Details</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Language</span>
+                        <div className="flex items-center gap-2 font-medium">
+                        <currentEcosystem.languageIcon className="w-5 h-5"/>
+                        <span>{currentEcosystem.language}</span>
                         </div>
-                    ) : (
-                        <MarkdownReport content={healthScoreExplanation || "AI analysis of your project's health."} />
-                    )}
-                </CardContent>
-            </Card>
-        </div>
-        <div className="lg:col-span-2">
-          <VulnerabilitiesList vulnerabilities={vulnerabilities} onSelect={handleVulnerabilitySelect} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Ecosystem</span>
+                        <div className="flex items-center gap-2 font-medium">
+                        <currentEcosystem.ecosystemIcon className="w-5 h-5"/>
+                        <Badge variant="secondary">{currentEcosystem.name}</Badge>
+                        </div>
+                    </div>
+                    </CardContent>
+                </Card>
+                )}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Sparkles className="text-primary w-5 h-5"/>
+                            AI Analysis
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {isExplanationLoading ? (
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                                <Loader2 className="w-4 h-4 animate-spin"/>
+                                <span>AI is reasoning...</span>
+                            </div>
+                        ) : (
+                            <MarkdownReport content={healthScoreExplanation || "AI analysis of your project's health."} />
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+            <div className="lg:col-span-2">
+            <VulnerabilitiesList vulnerabilities={vulnerabilities} onSelect={handleVulnerabilitySelect} />
+            </div>
         </div>
       </div>
       {selectedVulnerability && (
