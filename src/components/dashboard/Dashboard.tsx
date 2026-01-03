@@ -116,69 +116,91 @@ export function Dashboard() {
     try {
       const doc = new jsPDF();
       const margin = 15;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const textWidth = pageWidth - margin * 2;
       let yPos = margin;
 
-      doc.setFontSize(22);
-      doc.text("ShieldGuard Security Report", margin, yPos);
-      yPos += 10;
-
-      doc.setFontSize(16);
-      doc.text("Project Health Score", margin, yPos);
-      yPos += 8;
-      doc.setFontSize(12);
-      doc.text(`${healthScore} out of 100`, margin, yPos);
-      yPos += 15;
-      
-      doc.setFontSize(16);
-      doc.text("Scan Details", margin, yPos);
-      yPos += 8;
-      doc.setFontSize(12);
-      doc.text(`Language: ${currentEcosystem.language}`, margin, yPos);
-      yPos += 7;
-      doc.text(`Ecosystem: ${currentEcosystem.name}`, margin, yPos);
-      yPos += 15;
-
-      if (healthScoreExplanation) {
-        doc.setFontSize(16);
-        doc.text("AI Analysis", margin, yPos);
-        yPos += 8;
-        doc.setFontSize(11);
-        const splitExplanation = doc.splitTextToSize(healthScoreExplanation.replace(/###|##/g, ''), 180);
-        doc.text(splitExplanation, margin, yPos);
-        yPos += splitExplanation.length * 5 + 10;
-      }
-      
-      if (yPos > 260) {
-        doc.addPage();
-        yPos = margin;
-      }
-
-      doc.setFontSize(16);
-      doc.text("Vulnerable Packages", margin, yPos);
-      yPos += 10;
-
-      vulnerabilities.forEach(vuln => {
+      const addPageIfNeeded = () => {
         if (yPos > 270) {
           doc.addPage();
           yPos = margin;
         }
+      }
+
+      // Main Title
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text("ShieldGuard Security Report", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 15;
+
+      // Health Score Section
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Project Health Score", margin, yPos);
+      yPos += 8;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${healthScore} out of 100`, margin, yPos);
+      yPos += 15;
+      addPageIfNeeded();
+      
+      // Scan Details Section
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Scan Details", margin, yPos);
+      yPos += 8;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Language: ${currentEcosystem.language}`, margin, yPos);
+      yPos += 7;
+      doc.text(`Ecosystem: ${currentEcosystem.name}`, margin, yPos);
+      yPos += 15;
+      addPageIfNeeded();
+
+      // AI Analysis Section
+      if (healthScoreExplanation) {
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text("AI Analysis", margin, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        // Simple markdown to text conversion
+        const cleanExplanation = healthScoreExplanation.replace(/### |## /g, '').replace(/[\*_]/g, '');
+        const splitExplanation = doc.splitTextToSize(cleanExplanation, textWidth);
+        doc.text(splitExplanation, margin, yPos);
+        yPos += splitExplanation.length * 5 + 10;
+        addPageIfNeeded();
+      }
+      
+      // Vulnerabilities Section
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Vulnerable Packages", margin, yPos);
+      yPos += 10;
+
+      vulnerabilities.forEach(vuln => {
+        addPageIfNeeded();
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${vuln.pkg.name}@${vuln.pkg.version}`, margin, yPos);
+        
         doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.text(`${vuln.pkg.name}@${vuln.pkg.version} - ${vuln.highestSeverity}`, margin, yPos);
-        yPos += 7;
-        doc.setFont(undefined, 'normal');
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Highest Severity: ${vuln.highestSeverity}`, pageWidth - margin, yPos, { align: 'right' });
+        yPos += 8;
 
         vuln.vulns.forEach(item => {
-            if (yPos > 270) {
-              doc.addPage();
-              yPos = margin;
-            }
-            const summaryText = doc.splitTextToSize(`- (${item.severity}) ${item.summary || item.id}`, 170);
-            doc.setFontSize(10);
-            doc.text(summaryText, margin + 5, yPos);
-            yPos += summaryText.length * 4 + 2;
+            addPageIfNeeded();
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`- ${item.severity}:`, margin + 5, yPos);
+            doc.setFont('helvetica', 'normal');
+            const summaryText = doc.splitTextToSize(item.summary || item.id, textWidth - 10); // Indented text
+            doc.text(summaryText, margin + 25, yPos);
+            yPos += summaryText.length * 5 + 2;
         });
-        yPos += 5;
+        yPos += 8;
       });
 
       doc.save('shieldguard-report.pdf');
