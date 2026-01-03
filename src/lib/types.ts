@@ -1,12 +1,17 @@
-export interface Vulnerability {
+export interface VulnerabilityItem {
   id: string;
   summary: string;
   details: string;
   severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN';
+  affectedVersions: string[];
+  fixedVersion?: string;
+}
+
+export interface Vulnerability {
   pkg: {
     name: string;
     version: string;
   };
-  affectedVersions: string[];
-  fixedVersion?: string;
+  vulns: VulnerabilityItem[];
+  highestSeverity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN';
 }

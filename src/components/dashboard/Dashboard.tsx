@@ -51,7 +51,10 @@ export function Dashboard() {
         const results: Vulnerability[] = await response.json();
         setVulnerabilities(results);
         
-        const score = Math.max(0, 100 - results.length * 5 - results.filter(v => v.severity === 'CRITICAL' || v.severity === 'HIGH').length * 10);
+        const totalVulnerabilities = results.reduce((acc, curr) => acc + curr.vulns.length, 0);
+        const criticalCount = results.flatMap(r => r.vulns).filter(v => v.severity === 'CRITICAL' || v.severity === 'HIGH').length;
+
+        const score = Math.max(0, 100 - totalVulnerabilities * 5 - criticalCount * 10);
         setHealthScore(score);
 
         setStatus('success');
@@ -60,7 +63,7 @@ export function Dashboard() {
           setIsExplanationLoading(true);
           const explanationRes = await getHealthScoreExplanation({
             healthScore: score,
-            vulnerabilities: results.map(v => `${v.pkg.name}@${v.pkg.version}: ${v.summary}`),
+            vulnerabilities: results.flatMap(v => v.vulns.map(vuln => `${v.pkg.name}@${v.pkg.version}: ${vuln.summary}`)),
           });
           if (explanationRes.explanation) {
             setHealthScoreExplanation(explanationRes.explanation);

@@ -9,15 +9,13 @@ interface OsvQuery {
   };
 }
 
-interface OsvResponse {
-  results: {
-    vulns?: {
-      id: string;
-      summary: string;
-      details: string;
-      modified: string;
-      published: string;
-      affected: {
+interface OsvVuln {
+    id: string;
+    summary: string;
+    details: string;
+    modified: string;
+    published: string;
+    affected: {
         package: {
           name: string;
           ecosystem: string;
@@ -30,11 +28,15 @@ interface OsvResponse {
           }[];
         }[];
         versions: string[];
-      }[];
-      database_specific?: {
-          severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
-      }
     }[];
+    database_specific?: {
+        severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
+    }
+}
+
+interface OsvResponse {
+  results: {
+    vulns?: OsvVuln[];
   }[];
 }
 
@@ -77,26 +79,52 @@ export async function POST(req: NextRequest) {
 
     const data: OsvResponse = await res.json();
     
-    const vulnerabilities: Vulnerability[] = data.results.flatMap((result, index) => {
-        if (!result.vulns) return [];
-        const query = queries[index];
-        return result.vulns.map(vuln => {
-            const affectedPackage = vuln.affected && vuln.affected.length > 0 ? vuln.affected[0] : undefined;
-            const fixedEvent = affectedPackage?.ranges.find(r => r.type === 'SEMVER')?.events.find(e => e.fixed);
-            return {
-                id: vuln.id,
-                summary: vuln.summary,
-                details: vuln.details,
-                severity: vuln.database_specific?.severity || 'UNKNOWN',
-                pkg: {
-                    name: query.package.name,
-                    version: query.version,
-                },
-                affectedVersions: affectedPackage?.versions || [],
-                fixedVersion: fixedEvent?.fixed,
-            }
+    const vulnerabilitiesMap = new Map<string, Vulnerability>();
+
+    data.results.forEach((result, index) => {
+      if (!result.vulns) return;
+      
+      const query = queries[index];
+      const { name: pkgName, version: pkgVersion } = query.package;
+
+      let existingEntry = vulnerabilitiesMap.get(pkgName);
+
+      if (!existingEntry) {
+        existingEntry = {
+          pkg: {
+            name: pkgName,
+            version: pkgVersion,
+          },
+          vulns: [],
+          highestSeverity: 'UNKNOWN',
+        };
+      }
+      
+      const severities: ('CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN')[] = [existingEntry.highestSeverity];
+
+      result.vulns.forEach(vuln => {
+        const affectedPackage = vuln.affected && vuln.affected.length > 0 ? vuln.affected[0] : undefined;
+        const fixedEvent = affectedPackage?.ranges.find(r => r.type === 'SEMVER')?.events.find(e => e.fixed);
+        const severity = vuln.database_specific?.severity || 'UNKNOWN';
+        severities.push(severity);
+
+        existingEntry!.vulns.push({
+            id: vuln.id,
+            summary: vuln.summary,
+            details: vuln.details,
+            severity: severity,
+            affectedVersions: affectedPackage?.versions || [],
+            fixedVersion: fixedEvent?.fixed,
         });
+      });
+
+      const severityOrder: ('CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN')[] = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'UNKNOWN'];
+      existingEntry.highestSeverity = severities.sort((a, b) => severityOrder.indexOf(a) - severityOrder.indexOf(b))[0];
+
+      vulnerabilitiesMap.set(pkgName, existingEntry);
     });
+
+    const vulnerabilities: Vulnerability[] = Array.from(vulnerabilitiesMap.values());
 
     return NextResponse.json(vulnerabilities);
   } catch (error: any) {
