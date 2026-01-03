@@ -10,6 +10,7 @@ import { VulnerabilityDetailsSheet } from './VulnerabilityDetailsSheet';
 import { getHealthScoreExplanation } from '@/lib/actions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { MarkdownReport } from './MarkdownReport';
 
 export function Dashboard() {
   const searchParams = useSearchParams();
@@ -163,7 +164,7 @@ export function Dashboard() {
                             <span>AI is reasoning...</span>
                         </div>
                     ) : (
-                        <p className="text-sm text-muted-foreground">{healthScoreExplanation || "AI analysis of your project's health."}</p>
+                        <MarkdownReport content={healthScoreExplanation || "AI analysis of your project's health."} />
                     )}
                 </CardContent>
             </Card>
