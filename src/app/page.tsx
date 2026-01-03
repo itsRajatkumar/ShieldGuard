@@ -11,12 +11,8 @@ export default function Home() {
         </h1>
         <Sparkles className="h-6 w-6 text-primary" />
       </div>
-      <p className="mt-4 text-lg max-w-xl mx-auto text-muted-foreground">
-        Instantly scan your{' '}
-        <code className="font-code bg-muted text-muted-foreground p-1 rounded-md">
-          package.json
-        </code>{' '}
-        for vulnerabilities and get AI-powered security reports.
+      <p className="mt-4 text-lg max-w-2xl mx-auto text-muted-foreground">
+        Instantly scan your dependency files for vulnerabilities and get AI-powered security reports. Supports npm, PyPI, Go, Maven, and Cargo.
       </p>
       <div className="mt-12">
         <FileUploader />

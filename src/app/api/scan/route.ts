@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import type { Vulnerability } from '@/lib/types';
+import type { Vulnerability, Ecosystem } from '@/lib/types';
+import { parse } from 'dotenv';
 
 interface OsvQuery {
   version: string;
   package: {
     name: string;
-    ecosystem: 'npm';
+    ecosystem: Ecosystem;
   };
 }
 
@@ -47,6 +48,75 @@ interface OsvVuln {
 
 export const maxDuration = 60;
 
+function parseDependencies(content: string, ecosystem: Ecosystem): { name: string, version: string }[] {
+    try {
+        switch (ecosystem) {
+            case 'npm':
+                const packageJson = JSON.parse(content);
+                const dependencies = {
+                    ...(packageJson.dependencies || {}),
+                    ...(packageJson.devDependencies || {}),
+                };
+                return Object.entries(dependencies).map(([name, version]) => ({ name, version: (version as string).replace(/[~^>=<]/g, '') }));
+            case 'PyPI':
+                 return content
+                    .split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line && !line.startsWith('#'))
+                    .map(line => {
+                        const match = line.match(/([a-zA-Z0-9._-]+)(?:[~<>=!]=?([\d.]+))?/);
+                        return match ? { name: match[1], version: match[2] || '0.0.0' } : null;
+                    })
+                    .filter((v): v is {name: string, version: string} => v !== null);
+            case 'Go':
+                const goDeps: { name: string, version: string }[] = [];
+                const lines = content.split('\n');
+                let inRequire = false;
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed === 'require (') {
+                        inRequire = true;
+                        continue;
+                    }
+                    if (inRequire && trimmed === ')') {
+                        inRequire = false;
+                        continue;
+                    }
+                    if (inRequire || (!inRequire && trimmed.startsWith('require '))) {
+                        const parts = trimmed.replace('require ', '').split(/\s+/);
+                        if (parts.length >= 2) {
+                            goDeps.push({ name: parts[0], version: parts[1].replace('v', '') });
+                        }
+                    }
+                }
+                return goDeps;
+            // Basic parsers for Maven and Cargo. These can be improved.
+            case 'Maven': // pom.xml
+                const deps: { name: string, version: string }[] = [];
+                const depRegex = /<dependency>\s*<groupId>([^<]+)<\/groupId>\s*<artifactId>([^<]+)<\/artifactId>\s*<version>([^<]+)<\/version>/g;
+                let match;
+                while ((match = depRegex.exec(content)) !== null) {
+                    deps.push({ name: `${match[1]}:${match[2]}`, version: match[3] });
+                }
+                return deps;
+            case 'Cargo': // Cargo.lock
+                const cargoDeps: { name: string, version: string }[] = [];
+                const cargoRegex = /^name = "([^"]+)"\nversion = "([^"]+)"/gm;
+                while ((match = cargoRegex.exec(content)) !== null) {
+                    cargoDeps.push({ name: match[1], version: match[2] });
+                }
+                return cargoDeps;
+
+            default:
+                return [];
+        }
+    } catch (e) {
+        console.error(`Error parsing ${ecosystem} file:`, e);
+        return [];
+    }
+}
+
+
 async function fetchVulnerabilityDetails(vulnId: string): Promise<OsvVuln | null> {
     try {
         const res = await fetch(`https://api.osv.dev/v1/vulns/${vulnId}`);
@@ -64,25 +134,21 @@ async function fetchVulnerabilityDetails(vulnId: string): Promise<OsvVuln | null
 
 export async function POST(req: NextRequest) {
   try {
-    const { packageJsonContent } = await req.json();
+    const { content, ecosystem } = await req.json() as { content: string, ecosystem: Ecosystem };
 
-    if (!packageJsonContent) {
-      return NextResponse.json({ error: 'package.json content is missing' }, { status: 400 });
+    if (!content || !ecosystem) {
+      return NextResponse.json({ error: 'File content or ecosystem is missing' }, { status: 400 });
     }
 
-    const packageJson = JSON.parse(packageJsonContent);
-    const dependencies = {
-      ...(packageJson.dependencies || {}),
-      ...(packageJson.devDependencies || {}),
-    };
+    const dependencies = parseDependencies(content, ecosystem);
 
-    if (Object.keys(dependencies).length === 0) {
+    if (dependencies.length === 0) {
       return NextResponse.json([]);
     }
 
-    const queries: OsvQuery[] = Object.entries(dependencies).map(([name, version]) => ({
-      version: (version as string).replace(/[~^>=<]/g, ''),
-      package: { name, ecosystem: 'npm' },
+    const queries: OsvQuery[] = dependencies.map(({ name, version }) => ({
+      version: version,
+      package: { name, ecosystem },
     }));
 
     const batchRes = await fetch('https://api.osv.dev/v1/querybatch', {
@@ -114,10 +180,11 @@ export async function POST(req: NextRequest) {
 
     detailedVulns.forEach(vuln => {
         vuln.affected.forEach(affected => {
-            if (affected.package.ecosystem !== 'npm') return;
+            if (affected.package.ecosystem !== ecosystem) return;
 
-            const pkgName = affected.package.name;
-            const query = queries.find(q => q.package.name === pkgName);
+            const pkgName = ecosystem === 'Maven' ? `${affected.package.purl.split('/')[1].replace('%40', '@')}/${affected.package.name}` : affected.package.name;
+
+            const query = queries.find(q => q.package.name === pkgName || (ecosystem === 'Maven' && q.package.name.endsWith(':' + pkgName)));
             if (!query) return;
 
             let existingEntry = vulnerabilitiesMap.get(pkgName);
@@ -138,7 +205,7 @@ export async function POST(req: NextRequest) {
                 return;
             }
 
-            const fixedEvent = affected.ranges.find(r => r.type === 'SEMVER')?.events.find(e => 'fixed' in e);
+            const fixedEvent = affected.ranges.find(r => r.type === 'SEMVER' || r.type === 'ECOSYSTEM')?.events.find(e => 'fixed' in e);
             const severity = vuln.database_specific?.severity || 'UNKNOWN';
 
             existingEntry.vulns.push({

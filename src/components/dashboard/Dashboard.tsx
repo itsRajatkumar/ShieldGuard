@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ShieldX, Loader2, Sparkles, ServerCrash } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import type { Vulnerability } from '@/lib/types';
+import type { Vulnerability, Ecosystem } from '@/lib/types';
 import { HealthScoreGauge } from './HealthScoreGauge';
 import { VulnerabilitiesList } from './VulnerabilitiesList';
 import { VulnerabilityDetailsSheet } from './VulnerabilityDetailsSheet';
@@ -30,7 +30,9 @@ export function Dashboard() {
 
   useEffect(() => {
     const data = searchParams.get('data');
-    if (!data) {
+    const ecosystem = searchParams.get('ecosystem') as Ecosystem | null;
+
+    if (!data || !ecosystem) {
       setStatus('idle');
       return;
     }
@@ -44,11 +46,11 @@ export function Dashboard() {
     const scan = async () => {
       setStatus('loading');
       try {
-        const packageJsonContent = decodeURIComponent(escape(atob(data)));
+        const content = decodeURIComponent(escape(atob(data)));
         const response = await fetch('/api/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ packageJsonContent }),
+          body: JSON.stringify({ content, ecosystem }),
         });
 
         if (!response.ok) {
@@ -84,7 +86,7 @@ export function Dashboard() {
         setStatus('error');
         toast({
           title: 'Scan Failed',
-          description: e.message || 'Could not process the package.json file.',
+          description: e.message || 'Could not process the dependency file.',
           variant: 'destructive',
         });
       }
@@ -126,7 +128,7 @@ export function Dashboard() {
               <div className="flex flex-col items-center gap-4 bg-card rounded-lg p-8 max-w-md mx-auto">
                   <ShieldX className="h-16 w-16 text-muted-foreground" />
                   <h2 className="text-2xl font-bold">No file scanned</h2>
-                  <p className="text-muted-foreground">Upload a <code className="font-code bg-muted p-1 rounded-md">package.json</code> file to see the health report.</p>
+                  <p className="text-muted-foreground">Upload a dependency file to see the health report.</p>
                   <Button onClick={() => router.push('/')}>Upload File</Button>
               </div>
           </div>

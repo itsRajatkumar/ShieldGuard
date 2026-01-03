@@ -1,3 +1,5 @@
+export type Ecosystem = 'npm' | 'PyPI' | 'Go' | 'Maven' | 'Cargo' | (string & {});
+
 export interface VulnerabilityItem {
   id: string;
   summary: string;
