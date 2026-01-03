@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ShieldX, Loader2, Sparkles, ServerCrash } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,7 @@ export function Dashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
+  const scanHasRun = useRef(false);
 
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[] | null>(null);
   const [selectedVulnerability, setSelectedVulnerability] = useState<Vulnerability | null>(null);
@@ -33,6 +34,12 @@ export function Dashboard() {
       setStatus('idle');
       return;
     }
+    
+    // This prevents the effect from running twice in development due to strict mode.
+    if (scanHasRun.current) {
+        return;
+    }
+    scanHasRun.current = true;
 
     const scan = async () => {
       setStatus('loading');
