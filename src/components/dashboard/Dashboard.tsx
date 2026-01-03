@@ -14,7 +14,6 @@ import { MarkdownReport } from './MarkdownReport';
 import { ecosystemInfo, type EcosystemInfo } from '@/lib/ecosystems';
 import { Badge } from '../ui/badge';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 export function Dashboard() {
   const searchParams = useSearchParams();
@@ -111,32 +110,78 @@ export function Dashboard() {
     setIsSheetOpen(true);
   };
   
-  const handleDownloadPdf = async () => {
-    const reportElement = reportRef.current;
-    if (!reportElement) return;
-
+ const handleDownloadPdf = () => {
+    if (!vulnerabilities || !currentEcosystem) return;
     setIsDownloading(true);
     try {
-      const canvas = await html2canvas(reportElement, {
-        scale: 2,
-        backgroundColor: '#0A0A0A',
-        onclone: (document) => {
-            // Target the prose class to set text color explicitly for html2canvas
-            Array.from(document.querySelectorAll('.prose')).forEach(el => {
-                (el as HTMLElement).style.color = '#E5E7EB';
-            });
-        }
-      });
-      const imgData = canvas.toDataURL('image/png');
+      const doc = new jsPDF();
+      const margin = 15;
+      let yPos = margin;
+
+      doc.setFontSize(22);
+      doc.text("ShieldGuard Security Report", margin, yPos);
+      yPos += 10;
+
+      doc.setFontSize(16);
+      doc.text("Project Health Score", margin, yPos);
+      yPos += 8;
+      doc.setFontSize(12);
+      doc.text(`${healthScore} out of 100`, margin, yPos);
+      yPos += 15;
       
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'px',
-        format: [canvas.width, canvas.height]
+      doc.setFontSize(16);
+      doc.text("Scan Details", margin, yPos);
+      yPos += 8;
+      doc.setFontSize(12);
+      doc.text(`Language: ${currentEcosystem.language}`, margin, yPos);
+      yPos += 7;
+      doc.text(`Ecosystem: ${currentEcosystem.name}`, margin, yPos);
+      yPos += 15;
+
+      if (healthScoreExplanation) {
+        doc.setFontSize(16);
+        doc.text("AI Analysis", margin, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        const splitExplanation = doc.splitTextToSize(healthScoreExplanation.replace(/###|##/g, ''), 180);
+        doc.text(splitExplanation, margin, yPos);
+        yPos += splitExplanation.length * 5 + 10;
+      }
+      
+      if (yPos > 260) {
+        doc.addPage();
+        yPos = margin;
+      }
+
+      doc.setFontSize(16);
+      doc.text("Vulnerable Packages", margin, yPos);
+      yPos += 10;
+
+      vulnerabilities.forEach(vuln => {
+        if (yPos > 270) {
+          doc.addPage();
+          yPos = margin;
+        }
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text(`${vuln.pkg.name}@${vuln.pkg.version} - ${vuln.highestSeverity}`, margin, yPos);
+        yPos += 7;
+        doc.setFont(undefined, 'normal');
+
+        vuln.vulns.forEach(item => {
+            if (yPos > 270) {
+              doc.addPage();
+              yPos = margin;
+            }
+            const summaryText = doc.splitTextToSize(`- (${item.severity}) ${item.summary || item.id}`, 170);
+            doc.setFontSize(10);
+            doc.text(summaryText, margin + 5, yPos);
+            yPos += summaryText.length * 4 + 2;
+        });
+        yPos += 5;
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save('shieldguard-report.pdf');
+      doc.save('shieldguard-report.pdf');
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       toast({
