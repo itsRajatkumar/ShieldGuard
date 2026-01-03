@@ -11,6 +11,8 @@ import { getHealthScoreExplanation } from '@/lib/actions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { MarkdownReport } from './MarkdownReport';
+import { ecosystemInfo, type EcosystemInfo } from '@/lib/ecosystems';
+import { Badge } from '../ui/badge';
 
 export function Dashboard() {
   const searchParams = useSearchParams();
@@ -24,6 +26,7 @@ export function Dashboard() {
   const [healthScore, setHealthScore] = useState(0);
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [currentEcosystem, setCurrentEcosystem] = useState<EcosystemInfo | null>(null);
 
   const [healthScoreExplanation, setHealthScoreExplanation] = useState<string | null>(null);
   const [isExplanationLoading, setIsExplanationLoading] = useState(false);
@@ -35,6 +38,10 @@ export function Dashboard() {
     if (!data || !ecosystem) {
       setStatus('idle');
       return;
+    }
+    
+    if (ecosystemInfo[ecosystem]) {
+        setCurrentEcosystem(ecosystemInfo[ecosystem]);
     }
     
     // This prevents the effect from running twice in development due to strict mode.
@@ -159,6 +166,29 @@ export function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         <div className="lg:col-span-1 space-y-8">
             <HealthScoreGauge score={healthScore} />
+            {currentEcosystem && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scan Details</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Language</span>
+                    <div className="flex items-center gap-2 font-medium">
+                      <currentEcosystem.languageIcon className="w-5 h-5"/>
+                      <span>{currentEcosystem.language}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Ecosystem</span>
+                     <div className="flex items-center gap-2 font-medium">
+                      <currentEcosystem.ecosystemIcon className="w-5 h-5"/>
+                      <Badge variant="secondary">{currentEcosystem.name}</Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
