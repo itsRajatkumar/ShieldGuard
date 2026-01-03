@@ -114,7 +114,6 @@ export async function POST(req: NextRequest) {
 
     detailedVulns.forEach(vuln => {
         vuln.affected.forEach(affected => {
-            // We only care about npm packages
             if (affected.package.ecosystem !== 'npm') return;
 
             const pkgName = affected.package.name;
@@ -131,6 +130,12 @@ export async function POST(req: NextRequest) {
                     vulns: [],
                     highestSeverity: 'UNKNOWN',
                 };
+                 vulnerabilitiesMap.set(pkgName, existingEntry);
+            }
+            
+            // Check if this vulnerability ID is already added for this package
+            if (existingEntry.vulns.some(v => v.id === vuln.id)) {
+                return;
             }
 
             const fixedEvent = affected.ranges.find(r => r.type === 'SEMVER')?.events.find(e => 'fixed' in e);
@@ -150,8 +155,6 @@ export async function POST(req: NextRequest) {
             currentSeverities.push(existingEntry.highestSeverity);
 
             existingEntry.highestSeverity = currentSeverities.sort((a, b) => severityOrder.indexOf(a) - severityOrder.indexOf(b))[0];
-            
-            vulnerabilitiesMap.set(pkgName, existingEntry);
         })
     });
     
