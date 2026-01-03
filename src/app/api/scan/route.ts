@@ -81,7 +81,8 @@ export async function POST(req: NextRequest) {
         if (!result.vulns) return [];
         const query = queries[index];
         return result.vulns.map(vuln => {
-            const fixedEvent = vuln.affected[0]?.ranges.find(r => r.type === 'SEMVER')?.events.find(e => e.fixed);
+            const affectedPackage = vuln.affected && vuln.affected.length > 0 ? vuln.affected[0] : undefined;
+            const fixedEvent = affectedPackage?.ranges.find(r => r.type === 'SEMVER')?.events.find(e => e.fixed);
             return {
                 id: vuln.id,
                 summary: vuln.summary,
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
                     name: query.package.name,
                     version: query.version,
                 },
-                affectedVersions: vuln.affected[0]?.versions || [],
+                affectedVersions: affectedPackage?.versions || [],
                 fixedVersion: fixedEvent?.fixed,
             }
         });
