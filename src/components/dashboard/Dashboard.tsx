@@ -162,14 +162,31 @@ export function Dashboard() {
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
         doc.text("AI Analysis", margin, yPos);
-        yPos += 8;
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        // Simple markdown to text conversion
-        const cleanExplanation = healthScoreExplanation.replace(/### |## /g, '').replace(/[\*_]/g, '');
-        const splitExplanation = doc.splitTextToSize(cleanExplanation, textWidth);
-        doc.text(splitExplanation, margin, yPos);
-        yPos += splitExplanation.length * 5 + 10;
+        yPos += 10;
+        
+        const explanationLines = healthScoreExplanation.split('\n');
+
+        explanationLines.forEach(line => {
+            addPageIfNeeded();
+            if (line.startsWith('### ')) {
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                const title = line.replace('### ', '');
+                const splitTitle = doc.splitTextToSize(title, textWidth);
+                doc.text(splitTitle, margin, yPos);
+                yPos += (splitTitle.length * 6) + 4;
+            } else if (line.trim() === '') {
+                yPos += 4;
+            }
+            else {
+                doc.setFontSize(11);
+                doc.setFont('helvetica', 'normal');
+                const splitLine = doc.splitTextToSize(line, textWidth);
+                doc.text(splitLine, margin, yPos);
+                yPos += (splitLine.length * 5) + 2;
+            }
+        });
+        yPos += 10;
         addPageIfNeeded();
       }
       
@@ -196,8 +213,8 @@ export function Dashboard() {
             doc.setFont('helvetica', 'bold');
             doc.text(`- ${item.severity}:`, margin + 5, yPos);
             doc.setFont('helvetica', 'normal');
-            const summaryText = doc.splitTextToSize(item.summary || item.id, textWidth - 10); // Indented text
-            doc.text(summaryText, margin + 25, yPos);
+            const summaryText = doc.splitTextToSize(item.summary || item.id, textWidth - 20); // Indented text
+            doc.text(summaryText, margin + 25, yPos, {maxWidth: textWidth - 30});
             yPos += summaryText.length * 5 + 2;
         });
         yPos += 8;
